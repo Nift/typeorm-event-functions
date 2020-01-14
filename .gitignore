@@ -1,0 +1,8 @@
+node_modules
+dist/*
+./config/*
+config/
+.DS_Store
+.vs/
+firebase-credentials*
+lib/
