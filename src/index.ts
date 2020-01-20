@@ -15,10 +15,12 @@ import {
   createOneAsync,
   deleteOneAsync,
   findOneAlternativeConditionAsync,
-  anyAsync
+  anyAsync,
+  IModel
 } from "./functions";
 
 export {
+  IModel,
   anyAsync,
   createQueryBuilderAsync,
   selectQueryBuilderAsync,
