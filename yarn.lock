@@ -2754,9 +2754,9 @@ optimist@^0.6.1:
     wordwrap "~0.0.2"
 
 optional-typescript@^1.3.4:
-  version "1.3.4"
-  resolved "https://registry.yarnpkg.com/optional-typescript/-/optional-typescript-1.3.4.tgz#ff722f34c4f3f3ad0446104eafcdb642a5ed815b"
-  integrity sha512-IPd3yLPWQZ5puWfB+dQdpoChvrMwVx4cXenf0NKGevG6qiQJPpdGrVvq4BqEdA69/G2R5TDi67Qv/U6rWbZoGQ==
+  version "1.3.5"
+  resolved "https://registry.yarnpkg.com/optional-typescript/-/optional-typescript-1.3.5.tgz#435a855c515cb18346663148fff12480934ef137"
+  integrity sha512-6b90Bf2O5DVe0PLROrAYi6yQ+mzbBkfCOsSEeb0MqE1TEcnzkphPj+j9WGmBFaDz5q5YCkxbmD9rctXOyw6tJg==
 
 optionator@^0.8.1:
   version "0.8.3"
@@ -2967,6 +2967,13 @@ pn@^1.1.0:
   version "1.1.0"
   resolved "https://registry.yarnpkg.com/pn/-/pn-1.1.0.tgz#e2f4cef0e219f463c179ab37463e4e1ecdccbafb"
   integrity sha512-2qHaIQr2VLRFoxe2nASzsV6ef4yOOH+Fi9FBOVH6cqeSgUnoyySPZkxzLuzd+RYOQTRpROA0ztTMqxROKSb/nA==
+
+position-functions@^1.0.0:
+  version "1.0.0"
+  resolved "https://registry.yarnpkg.com/position-functions/-/position-functions-1.0.0.tgz#64b174917a8583869522b55b373ff2e93d04884d"
+  integrity sha512-Iwnbf1XqRAZonWHfDZ3JED/aEznJqC8Q5u71xQXEbE3IcmoixCk0GEgceRRcZOj/ojTvveCUbzSBMu2mtNFwJQ==
+  dependencies:
+    reflect-metadata "^0.1.12"
 
 posix-character-classes@^0.1.0:
   version "0.1.1"

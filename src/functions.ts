@@ -14,7 +14,6 @@ import {
   OrderByCondition
 } from "typeorm";
 import { QueryDeepPartialEntity } from "typeorm/query-builder/QueryPartialEntity";
-// import { sendEvent } from "./eventHandling";
 
 export interface IModel {
   id: string;
