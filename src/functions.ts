@@ -11,7 +11,7 @@ import {
   ObjectLiteral,
   UpdateQueryBuilder,
   ObjectType,
-  OrderByCondition
+  OrderByCondition,
 } from "typeorm";
 import { QueryDeepPartialEntity } from "typeorm/query-builder/QueryPartialEntity";
 
@@ -19,22 +19,30 @@ export interface IModel {
   id: string;
 }
 
-async function getRepositoryAsync<T>(
-  target: ObjectType<T> | string | Function | (new () => T) | EntitySchema<T>
-): Promise<Repository<T>> {
-  return getConnection().getRepository(target);
+async function getRepositoryAsync<T>({
+  target,
+  connectionName = "default",
+}: {
+  target: ObjectType<T> | string | Function | (new () => T) | EntitySchema<T>;
+  connectionName?: string;
+}): Promise<Repository<T>> {
+  return getConnection(connectionName).getRepository(target);
 }
 
 export async function createQueryBuilderAsync<T>({
   target,
   lockMode,
-  lockVersion
+  lockVersion,
+  connectionName,
 }: {
   target: ObjectType<T> | string | Function | (new () => T) | EntitySchema<T>;
   lockMode?: "pessimistic_read" | "pessimistic_write" | "optimistic";
   lockVersion?: number | Date;
+  connectionName?: string;
 }): Promise<SelectQueryBuilder<T>> {
-  let queryBuilder = (await getRepositoryAsync(target)).createQueryBuilder();
+  let queryBuilder = (
+    await getRepositoryAsync({ target, connectionName })
+  ).createQueryBuilder();
   if (lockMode === "optimistic") {
     if (!lockVersion) throw new Error("Lock version not specified");
 
@@ -54,16 +62,23 @@ export async function createQueryBuilderAsync<T>({
 async function simplifiedQueryBuilderAsync<T>({
   target,
   lockMode,
-  lockVersion
+  lockVersion,
+  connectionName,
 }: {
   target: ObjectType<T> | string | Function | (new () => T) | EntitySchema<T>;
   lockMode?: "optimistic" | "pessimistic_read" | "pessimistic_write";
   lockVersion?: number | Date;
+  connectionName?: string;
 }): Promise<SelectQueryBuilder<T>> {
   if (lockMode) {
     if (lockMode === "optimistic") {
       if (lockVersion) {
-        return createQueryBuilderAsync({ target, lockMode, lockVersion });
+        return createQueryBuilderAsync({
+          target,
+          lockMode,
+          lockVersion,
+          connectionName,
+        });
       } else return createQueryBuilderAsync({ target });
     } else return createQueryBuilderAsync({ target, lockMode });
   } else return createQueryBuilderAsync({ target });
@@ -72,7 +87,7 @@ async function simplifiedQueryBuilderAsync<T>({
 async function deleteQueryBuilderAsync<T>({
   target,
   lockMode,
-  lockVersion
+  lockVersion,
 }: {
   target: ObjectType<T> | string | Function | (new () => T) | EntitySchema<T>;
   lockMode?: "optimistic" | "pessimistic_read" | "pessimistic_write";
@@ -81,7 +96,7 @@ async function deleteQueryBuilderAsync<T>({
   const queryBuilder = await simplifiedQueryBuilderAsync({
     target,
     lockMode,
-    lockVersion
+    lockVersion,
   });
   // tslint:disable-next-line: newline-per-chained-call
   return queryBuilder.delete().from(target);
@@ -92,7 +107,8 @@ export async function selectQueryBuilderAsync<T>({
   where,
   parameters,
   lockMode,
-  lockVersion
+  lockVersion,
+  connectionName,
 }: {
   target: ObjectType<T> | string | Function | (new () => T) | EntitySchema<T>;
   where:
@@ -104,11 +120,13 @@ export async function selectQueryBuilderAsync<T>({
   parameters?: ObjectLiteral;
   lockMode?: "optimistic" | "pessimistic_read" | "pessimistic_write";
   lockVersion?: number | Date;
+  connectionName?: string;
 }): Promise<SelectQueryBuilder<T>> {
   const queryBuilder = await simplifiedQueryBuilderAsync({
     target,
     lockMode,
-    lockVersion
+    lockVersion,
+    connectionName,
   });
   return queryBuilder.where(where, parameters);
 }
@@ -120,7 +138,8 @@ export async function deleteEntriesBasedOnConditionPessimisticAsync<
   target,
   where,
   sendEvent,
-  parameters
+  parameters,
+  connectionName,
 }: {
   target: ObjectType<T> | string | Function | (new () => T) | EntitySchema<T>;
   where:
@@ -133,22 +152,24 @@ export async function deleteEntriesBasedOnConditionPessimisticAsync<
     | ((entry: T) => TEventResult | Promise<TEventResult>)
     | (() => TEventResult | Promise<TEventResult>);
   parameters?: ObjectLiteral;
+  connectionName?: string;
 }): Promise<T[]> {
   const entitiesBeingDeleted = await (
     await selectQueryBuilderAsync({
       target,
       where,
-      parameters
+      parameters,
+      connectionName,
     })
   ).getMany();
 
   if (sendEvent) {
-    entitiesBeingDeleted.forEach(async entry => sendEvent(entry));
+    entitiesBeingDeleted.forEach(async (entry) => sendEvent(entry));
   }
   await (
     await deleteQueryBuilderAsync({
       target,
-      lockMode: "pessimistic_write"
+      lockMode: "pessimistic_write",
     })
   )
     .where(where, parameters)
@@ -163,7 +184,8 @@ export async function updateEntriesAsync<T, TEventResult>({
   sendEvent,
   parameters,
   lockMode,
-  lockVersion
+  lockVersion,
+  connectionName,
 }: {
   target: ObjectType<T> | string | Function | (new () => T) | EntitySchema<T>;
   updateValues: QueryDeepPartialEntity<T>;
@@ -179,11 +201,13 @@ export async function updateEntriesAsync<T, TEventResult>({
   parameters?: ObjectLiteral;
   lockMode?: "optimistic" | "pessimistic_read" | "pessimistic_write";
   lockVersion?: number | Date;
+  connectionName?: string;
 }): Promise<T[]> {
   const queryBuilder = await simplifiedQueryBuilderAsync({
     target,
     lockMode,
-    lockVersion
+    lockVersion,
+    connectionName,
   });
   await queryBuilder
     .update(target)
@@ -193,11 +217,12 @@ export async function updateEntriesAsync<T, TEventResult>({
   const select = await (
     await selectQueryBuilderAsync({
       target,
-      where
+      where,
+      connectionName,
     })
   ).getMany();
   if (sendEvent) {
-    select.forEach(async entry => sendEvent(entry));
+    select.forEach(async (entry) => sendEvent(entry));
   }
   return select;
 }
@@ -206,36 +231,48 @@ interface IGetIdParams<A extends IModel, B> {
   target: ObjectType<A> | string | Function | (new () => A) | EntitySchema<A>;
   id: string;
   createFromModel: (val: A) => B;
+  connectionName?: string;
 }
 
 export async function getByIdAsync<A extends IModel, B>({
   target,
   id,
-  createFromModel
+  createFromModel,
+  connectionName,
 }: IGetIdParams<A, B>): Promise<Optional<B>> {
-  return findOneAsync({ target, createFromModel, condition: id });
+  return findOneAsync({
+    target,
+    createFromModel,
+    condition: id,
+    connectionName,
+  });
 }
 
 export async function findOneAsync<A, B>({
   target,
   createFromModel,
   condition,
-  orderByCondition
+  orderByCondition,
+  connectionName,
 }: {
   target: ObjectType<A> | string | Function | (new () => A) | EntitySchema<A>;
   createFromModel: (val: A) => B;
   condition?: string | number | Date | FindConditions<A>;
   orderByCondition?: OrderByCondition;
+  connectionName?: string;
 }): Promise<Optional<B>> {
   if (
     condition instanceof Date ||
     typeof condition === "string" ||
     typeof condition === "number"
   ) {
-    const repo = await getRepositoryAsync(target);
+    const repo = await getRepositoryAsync({ target, connectionName });
     return Some(await repo.findOne(condition)).map(createFromModel);
   } else {
-    let queryBuilder = await createQueryBuilderAsync({ target });
+    let queryBuilder = await createQueryBuilderAsync({
+      target,
+      connectionName,
+    });
     if (orderByCondition) {
       queryBuilder = queryBuilder.orderBy(orderByCondition);
     }
@@ -247,12 +284,14 @@ export async function findOneAsync<A, B>({
 }
 export async function anyAsync<A, B>({
   target,
-  condition
+  condition,
+  connectionName,
 }: {
   target: ObjectType<A> | string | Function | (new () => A) | EntitySchema<A>;
   condition?: FindConditions<A>;
+  connectionName?: string;
 }): Promise<boolean> {
-  let queryBuilder = await createQueryBuilderAsync({ target });
+  let queryBuilder = await createQueryBuilderAsync({ target, connectionName });
   if (condition) {
     queryBuilder = queryBuilder.where(<ObjectLiteral>condition);
   }
@@ -265,7 +304,8 @@ export async function findAsync<A, B>({
   findConditions,
   orderByCondition,
   takeAmount,
-  skipAmount
+  skipAmount,
+  connectionName,
 }: {
   target: ObjectType<A> | string | Function | (new () => A) | EntitySchema<A>;
   createFromModel: (val: A) => B;
@@ -273,8 +313,9 @@ export async function findAsync<A, B>({
   orderByCondition?: OrderByCondition;
   takeAmount?: number;
   skipAmount?: number;
+  connectionName?: string;
 }): Promise<B[]> {
-  let queryBuilder = await createQueryBuilderAsync({ target });
+  let queryBuilder = await createQueryBuilderAsync({ target, connectionName });
   if (orderByCondition) {
     queryBuilder = queryBuilder.orderBy(orderByCondition);
   }
@@ -293,7 +334,8 @@ export async function createAsync<A extends DeepPartial<A>, B, TEventResult>({
   elementsToCreate,
   createFromModel,
   sendEvent,
-  options
+  options,
+  connectionName,
 }: {
   target: ObjectType<A> | string | Function | (new () => A) | EntitySchema<A>;
   elementsToCreate: A[];
@@ -302,10 +344,11 @@ export async function createAsync<A extends DeepPartial<A>, B, TEventResult>({
     | ((entry: B) => TEventResult | Promise<TEventResult>)
     | (() => TEventResult | Promise<TEventResult>);
   options?: SaveOptions;
+  connectionName?: string;
 }): Promise<B[]> {
-  const repo = await getRepositoryAsync(target);
+  const repo = await getRepositoryAsync({ target, connectionName });
   return Promise.all(
-    (await repo.save(elementsToCreate, options)).map(async entry => {
+    (await repo.save(elementsToCreate, options)).map(async (entry) => {
       const tmp = createFromModel(entry);
       if (sendEvent) {
         await sendEvent(tmp);
@@ -325,7 +368,8 @@ export async function createOneAsync<
   elementToCreate,
   createFromModel,
   sendEvent,
-  options
+  options,
+  connectionName,
 }: {
   target: ObjectType<A> | string | Function | (new () => A) | EntitySchema<A>;
   elementToCreate: A;
@@ -334,8 +378,9 @@ export async function createOneAsync<
     | ((entry: B) => TEventResult | Promise<TEventResult>)
     | (() => TEventResult | Promise<TEventResult>);
   options?: SaveOptions;
+  connectionName?: string;
 }): Promise<B> {
-  const repo = await getRepositoryAsync(target);
+  const repo = await getRepositoryAsync({ target, connectionName });
   const element = createFromModel(await repo.save(elementToCreate, options));
   if (sendEvent) {
     await sendEvent(element);
@@ -348,7 +393,8 @@ export async function updateAsync<A, B, TEventResult>({
   criteria,
   elementToUpdate,
   retrievalFunction,
-  sendEvent
+  sendEvent,
+  connectionName,
 }: {
   target: ObjectType<A> | string | Function | (new () => A) | EntitySchema<A>;
   criteria:
@@ -364,12 +410,13 @@ export async function updateAsync<A, B, TEventResult>({
   sendEvent?:
     | ((entry?: B) => TEventResult | Promise<TEventResult>)
     | (() => TEventResult | Promise<TEventResult>);
+  connectionName?: string;
 }): Promise<Optional<B>> {
   const updatedEntryOrNone = await retrievalFunction();
   if (!updatedEntryOrNone.hasValue) {
     throw new Error("Not possible to update the given entity");
   }
-  const repo = await getRepositoryAsync(target);
+  const repo = await getRepositoryAsync({ target, connectionName });
   await repo.update(criteria, elementToUpdate);
   if (sendEvent) {
     await sendEvent(updatedEntryOrNone.valueOrUndefined());
@@ -382,7 +429,8 @@ export async function updateByIdAsync<A extends IModel, B, TEventResult>({
   id,
   elementToUpdate,
   createFromModel,
-  sendEvent
+  sendEvent,
+  connectionName,
 }: {
   target: ObjectType<A> | string | Function | (new () => A) | EntitySchema<A>;
   id: string;
@@ -391,13 +439,16 @@ export async function updateByIdAsync<A extends IModel, B, TEventResult>({
   sendEvent?:
     | ((entry: B) => TEventResult | Promise<TEventResult>)
     | (() => TEventResult | Promise<TEventResult>);
+  connectionName?: string;
 }): Promise<Optional<B>> {
   return updateAsync({
     target,
     criteria: <FindConditions<IModel>>{ id },
     elementToUpdate: <DeepPartial<IModel>>elementToUpdate,
-    retrievalFunction: () => getByIdAsync({ target, id, createFromModel }),
-    sendEvent
+    retrievalFunction: () =>
+      getByIdAsync({ target, id, createFromModel, connectionName }),
+    sendEvent,
+    connectionName,
   });
 }
 
@@ -405,7 +456,8 @@ export async function deleteOneAsync<A, B, TEventResult>({
   target,
   criteria,
   retrievalFunction,
-  sendEvent
+  sendEvent,
+  connectionName,
 }: {
   target: ObjectType<A> | string | Function | (new () => A) | EntitySchema<A>;
   criteria:
@@ -420,8 +472,9 @@ export async function deleteOneAsync<A, B, TEventResult>({
   sendEvent?:
     | ((entry?: B) => TEventResult | Promise<TEventResult>)
     | (() => TEventResult | Promise<TEventResult>);
+  connectionName?: string;
 }): Promise<Optional<B>> {
-  const repo = await getRepositoryAsync(target);
+  const repo = await getRepositoryAsync({ target, connectionName });
   const toBeDeletedOrNone = await retrievalFunction();
   if (toBeDeletedOrNone.hasValue) {
     await repo.delete(criteria);
@@ -436,7 +489,8 @@ export async function deleteAsync<A, B, TEventResult>({
   target,
   criteria,
   retrievalFunction,
-  sendEvent
+  sendEvent,
+  connectionName,
 }: {
   target: ObjectType<A> | string | Function | (new () => A) | EntitySchema<A>;
   criteria:
@@ -451,8 +505,9 @@ export async function deleteAsync<A, B, TEventResult>({
   sendEvent?:
     | ((entry?: B) => TEventResult | Promise<TEventResult>)
     | (() => TEventResult | Promise<TEventResult>);
+  connectionName?: string;
 }): Promise<B[]> {
-  const repo = await getRepositoryAsync(target);
+  const repo = await getRepositoryAsync({ target, connectionName });
   const toBeDeletedOrNone = await retrievalFunction();
   if (toBeDeletedOrNone.hasValue) {
     await repo.delete(criteria);
@@ -460,7 +515,7 @@ export async function deleteAsync<A, B, TEventResult>({
       if (toBeDeletedOrNone.hasValue) {
         toBeDeletedOrNone
           .valueOrFailure()
-          .forEach(async val => await sendEvent(val));
+          .forEach(async (val) => await sendEvent(val));
       }
     }
   }
@@ -471,7 +526,8 @@ export async function deleteByIdAsync<A extends IModel, B, TEventResult>({
   target,
   id,
   createFromModel,
-  sendEvent
+  sendEvent,
+  connectionName,
 }: {
   target: ObjectType<A> | string | Function | (new () => A) | EntitySchema<A>;
   id: string;
@@ -479,12 +535,14 @@ export async function deleteByIdAsync<A extends IModel, B, TEventResult>({
   sendEvent?:
     | ((entry?: B) => TEventResult | Promise<TEventResult>)
     | (() => TEventResult | Promise<TEventResult>);
+  connectionName?: string;
 }) {
   return deleteOneAsync({
     target,
     criteria: <FindConditions<IModel>>{ id },
     retrievalFunction: () => getByIdAsync({ target, id, createFromModel }),
-    sendEvent
+    sendEvent,
+    connectionName,
   });
 }
 
@@ -492,14 +550,16 @@ export async function findByIdsAsync<A extends IModel, B>({
   target,
   createFromModel,
   ids,
-  optionsOrConditions
+  optionsOrConditions,
+  connectionName,
 }: {
   target: ObjectType<A> | string | Function | (new () => A) | EntitySchema<A>;
   createFromModel: (val: A) => B;
   ids: string[];
   optionsOrConditions?: FindConditions<A>;
+  connectionName?: string;
 }) {
-  const repo = await getRepositoryAsync(target);
+  const repo = await getRepositoryAsync({ target, connectionName });
   return (await repo.findByIds(ids, optionsOrConditions)).map(createFromModel);
 }
 
@@ -508,25 +568,29 @@ export async function findOneAlternativeConditionAsync<A extends IModel, B>({
   createFromModel,
   condition,
   alternativeCondition,
-  orderByCondition
+  orderByCondition,
+  connectionName,
 }: {
   target: ObjectType<A> | string | Function | (new () => A) | EntitySchema<A>;
   createFromModel: (val: A) => B;
   condition?: string | number | Date | FindConditions<A>;
   alternativeCondition?: string | number | Date | FindConditions<A>;
   orderByCondition?: OrderByCondition;
+  connectionName?: string;
 }): Promise<Optional<B>> {
   const firstOptionOrNone = await findOneAsync({
     target,
     createFromModel,
     condition,
-    orderByCondition
+    orderByCondition,
+    connectionName,
   });
   if (firstOptionOrNone.hasValue) return firstOptionOrNone;
   return findOneAsync({
     target,
     createFromModel,
     condition: alternativeCondition,
-    orderByCondition
+    orderByCondition,
+    connectionName,
   });
 }
